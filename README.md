@@ -1,4 +1,4 @@
-# 👋 Hey, I'm CodeXx
+# 👋 Hey, I'm Codexx
 
 ### 💫 About Me
 I'm a **SOC Cybersecurity Professional** and **Ethical Hacking Expert** who loves solving complex problems, automating security workflows, and designing intelligent UI/UX systems for real-world projects.  
