@@ -29,12 +29,6 @@ I believe in creating tools that make systems safer, smarter, and more explainab
 
 ---
 
-### 📊 GitHub Analytics
-![CodeXx's GitHub Stats](https://github-readme-stats.vercel.app/api?username=codexx&show_icons=true&theme=radical&count_private=true)
-![Top Languages](https://github-readme-stats.vercel.app/api/top-langs/?username=codexx&layout=compact&theme=radical)
-
----
-
 ### 🚀 Featured Projects
 - 🔐 **SOC Automation Dashboard** — Real-time SIEM visualization with API integration.  
 - 🧠 **Threat Intel Analyzer** — Automated CVE & IOC lookup tool.  
