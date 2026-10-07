@@ -35,30 +35,48 @@ def get_days(login, token):
 
 
 def get_langs(login, token):
-    totals = {}
+    by_bytes, by_repos = {}, {}
     repos = api(f"https://api.github.com/users/{login}/repos?per_page=100&type=owner", token)
     for r in repos:
         if r.get("fork"):
             continue
+        if r.get("language"):
+            by_repos[r["language"]] = by_repos.get(r["language"], 0) + 1
         for lang, n in api(r["languages_url"], token).items():
-            totals[lang] = totals.get(lang, 0) + n
-    return sorted(totals.items(), key=lambda x: -x[1])[:5]
+            by_bytes[lang] = by_bytes.get(lang, 0) + n
+    top = lambda d: sorted(d.items(), key=lambda x: -x[1])[:5]
+    return top(by_bytes), top(by_repos)
+
+
+def span(a, b):
+    da, db = date.fromisoformat(a), date.fromisoformat(b)
+    f = lambda d, y: d.strftime("%b ").lower() + str(d.day) + (d.strftime(" '%y") if y else "")
+    return f"{f(da, da.year != db.year)} - {f(db, False)}"
 
 
 def streaks(days):
     today = date.today().isoformat()
     days = [d for d in days if d[0] <= today]
-    longest = run = 0
-    for _, c in days:
-        run = run + 1 if c > 0 else 0
-        longest = max(longest, run)
+    best, best_rng, run, start = 0, "-", 0, None
+    for dt, c in days:
+        if c > 0:
+            if run == 0:
+                start = dt
+            run += 1
+            if run > best:
+                best, best_rng = run, span(start, dt)
+        else:
+            run = 0
     cur, i = 0, len(days) - 1
     if i >= 0 and days[i][1] == 0:      # today may still be empty
         i -= 1
+    end = days[i][0] if i >= 0 else None
     while i >= 0 and days[i][1] > 0:
         cur += 1
+        first = days[i][0]
         i -= 1
-    return cur, longest
+    cur_rng = span(first, end) if cur else "-"
+    return cur, cur_rng, best, best_rng
 
 
 def card(w, h, inner):
@@ -78,19 +96,24 @@ def stats_svg(total, cur, longest):
     return card(495, 120, out)
 
 
-def langs_svg(langs):
-    total = sum(n for _, n in langs) or 1
-    out = f'<text x="24" y="34" font-size="13" fill="{INK}">top languages (public repos, by bytes)</text>'
-    for i, (name, n) in enumerate(langs):
-        y = 62 + i * 28
-        pct = n * 100 / total
-        out += (f'<text x="24" y="{y + 11}" font-size="12" fill="{INK}">{escape(name)}</text>'
-                f'<rect x="130" y="{y}" width="280" height="12" rx="6" fill="{LINE}"/>'
-                f'<rect x="130" y="{y}" width="{max(6, 280 * pct / 100):.0f}" height="12" rx="6" fill="{RED}"/>'
-                f'<text x="420" y="{y + 11}" font-size="12" fill="{MUTE}">{pct:.0f}%</text>')
-    if not langs:
-        out += f'<text x="24" y="70" font-size="12" fill="{MUTE}">no public repos yet</text>'
-    return card(495, 70 + max(len(langs), 1) * 28, out)
+def langs_svg(by_bytes, by_repos):
+    out = ""
+    cols = [("by bytes", by_bytes, 24, True), ("by repos", by_repos, 330, False)]
+    for title, data, x0, as_pct in cols:
+        out += f'<text x="{x0}" y="34" font-size="12" fill="{MUTE}">{title}</text>'
+        total = sum(n for _, n in data) or 1
+        top = max([n for _, n in data] + [1])
+        for i, (name, n) in enumerate(data):
+            y = 54 + i * 26
+            frac = n / total if as_pct else n / top
+            label = f"{n * 100 / total:.0f}%" if as_pct else str(n)
+            out += (f'<text x="{x0}" y="{y + 11}" font-size="12" fill="{INK}">{escape(name.lower())}</text>'
+                    f'<rect x="{x0 + 90}" y="{y}" width="120" height="12" rx="6" fill="{LINE}"/>'
+                    f'<rect x="{x0 + 90}" y="{y}" width="{max(6, 120 * frac):.0f}" height="12" rx="6" fill="{RED}"/>'
+                    f'<text x="{x0 + 222}" y="{y + 11}" font-size="12" fill="{MUTE}">{label}</text>')
+        if not data:
+            out += f'<text x="{x0}" y="70" font-size="12" fill="{MUTE}">no public repos yet</text>'
+    return card(620, 54 + 5 * 26 + 14, out)
 
 
 RAMP = [(".", LINE), (":", "#7a2c3a"), ("+", "#b8344a"), ("#", "#e0405a"), ("@", RED)]
@@ -102,14 +125,16 @@ def heading_svg(title):
             f'{escape(title)}</text><rect x="0" y="38" width="620" height="2" fill="{LINE}"/></svg>')
 
 
-def streak_svg(cur, longest):
+def streak_svg(cur, cur_rng, longest, longest_rng):
     out = ""
-    for i, (label, val) in enumerate([("current streak", cur), ("longest streak", longest)]):
+    for i, (label, val, rng) in enumerate([("current streak", cur, cur_rng), ("longest streak", longest, longest_rng)]):
         x = 40 + i * 300
         out += (f'<text x="{x}" y="62" font-size="44" font-weight="700" fill="{RED}">{val}</text>'
                 f'<text x="{x + 12 + 26 * len(str(val))}" y="62" font-size="16" fill="{MUTE}">days</text>'
-                f'<text x="{x}" y="90" font-size="13" fill="{INK}">{label}</text>')
-    return card(620, 112, out)
+                f'<text x="{x}" y="90" font-size="13" fill="{INK}">{label}</text>'
+                f'<text x="{x}" y="110" font-size="11" fill="{MUTE}">{escape(rng)}</text>')
+    out += f'<rect x="310" y="28" width="1" height="84" fill="{LINE}"/>'
+    return card(620, 134, out)
 
 
 def year_svg(days):
@@ -130,15 +155,17 @@ def main():
     if "--demo" in sys.argv:
         t = date.today()
         days = [((t - timedelta(d)).isoformat(), 0 if d in (9, 20) else 2) for d in range(364, -1, -1)]
-        total, langs = sum(c for _, c in days), [("JavaScript", 5200), ("HTML", 3100), ("CSS", 1500), ("Python", 900)]
+        total = sum(c for _, c in days)
+        langs = ([("JavaScript", 5200), ("HTML", 3100), ("CSS", 1500), ("Python", 900)],
+                 [("JavaScript", 4), ("HTML", 3), ("Python", 2), ("CSS", 1)])
     else:
         login, token = os.environ["GH_LOGIN"], os.environ["GITHUB_TOKEN"]
         total, days = get_days(login, token)
         langs = get_langs(login, token)
-    cur, longest = streaks(days)
+    cur, cur_rng, longest, longest_rng = streaks(days)
     open("stats.svg", "w").write(stats_svg(total, cur, longest))
-    open("langs.svg", "w").write(langs_svg(langs))
-    open("streak.svg", "w").write(streak_svg(cur, longest))
+    open("langs.svg", "w").write(langs_svg(*langs))
+    open("streak.svg", "w").write(streak_svg(cur, cur_rng, longest, longest_rng))
     open("year.svg", "w").write(year_svg(days[-365:]))
     for name in ["about", "stack", "projects", "stats", "about-this-page"]:
         open(f"hd-{name}.svg", "w").write(heading_svg(name.replace("-", " ")))
